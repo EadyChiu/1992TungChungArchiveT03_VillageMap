@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  villagestorymap_v6.html
+  1992 Tung Chung Field Research Archive - Let's Walk into the Villages Together
+  1992年東涌田野調查檔案 : 讓我們一起走進村落
+
+  Version 6 updates (from villagestorymap_v5.html):
+  1. PDF scans and TXT transcripts are now loaded from Google Drive instead of
+     local file paths. This fixes the file:// display issue permanently.
+  2. PDFs embedded via Google Drive /preview iframe in the detail panel.
+  3. TXTs embedded via Google Drive /view iframe in the detail panel.
+  4. Doc card PDF/TXT links also point to Google Drive.
+  5. File IDs are stored in DRIVE_PDF_IDS and DRIVE_TXT_IDS lookup tables.
+
+  Based on the WORKBUDDY_DUALVIEW_TASK.md specification.
+
+  Version 2 fixes (from villagestorymap.html):
+  1. Map popup now uses a styled qgis2web-style table (white bg, dark text,
+     bold labels, constrained images) instead of the unstyled raw table.
+  2. Sidebar VOSviewer button uses a lighter background with high-contrast
+     dark text so the label is clearly readable.
+
+  Architecture inspired by a dummy prototype (Terraso-style story map layout).
+  Data sourced entirely from the qgis2web GeoJSON export (By_Villages_1.js).
+  No data is fabricated. Original index.html is NOT overwritten.
+
+  ── RELATIVE PATHS (from this file's folder) ────────────────────────────────
+    css/    → qgis2web Leaflet CSS
+    js/     → qgis2web Leaflet JS
+    data/   → By_Villages_1.js (GeoJSON) + Present_Merged_Clipped_Map_0.png
+    images/ → Word cloud PNGs (qgis2web auto-renamed from absolute paths)
+
+  External (Google Drive shared folder):
+    https://drive.google.com/drive/folders/1-lAHth_EbdlJJPJctrFjtRGY7ImqF442
+    PDFs: https://drive.google.com/file/d/{PDF_FILE_ID}/preview
+    TXTs: https://drive.google.com/file/d/{TXT_FILE_ID}/view
+
+  ── Google Drive NOTE ──────────────────────────────────────────────────────
+  PDF and TXT files are now hosted on Google Drive. PDFs are embedded via
+  <iframe> using the /preview endpoint. TXTs are embedded via <iframe>
+  using the /view endpoint. Both work on file:// and http://.
+
+  ── CUSTOMIZE ───────────────────────────────────────────────────────────────
+  Search for ">>> USER:" to find every editable section.
+  ============================================================================
+-->
+<html lang="zh-HK">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- qgis2web original stylesheets (relative paths, do not change) -->
+  <link rel="stylesheet" href="css/leaflet.css" />
+  <link rel="stylesheet" href="css/L.Control.Layers.Tree.css" />
+  <link rel="stylesheet" href="css/qgis2web.css" />
+  <link rel="stylesheet" href="css/fontawesome-all.min.css" />
+  <link rel="stylesheet" href="css/MarkerCluster.css" />
+  <link rel="stylesheet" href="css/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="css/leaflet.photon.css" />
+
+  <title>1992 Tung Chung Field Research Archive - Let's Walk into the Villages Together 1992年東涌田野調查檔案 : 讓我們一起走進村落</title>
+
+  <style>
+    /* ================================================================
+       COLOR PALETTE (Teal and Orange)
+       Source: Teal Color Palette — Deep Aqua, Seafoam Teal, Pale Ice,
+               Warm Orange, Terracotta.
+       >>> USER: Change any value below — it applies everywhere <<<
+       ================================================================ */
+    :root {
+      /* Map & layout background */
+      --map-bg-color: #EDF6F9;           /* >>> USER: map & workspace background (Pale Ice) <<< */
+      --sidebar-bg-color: #EDF6F9;       /* >>> USER: left sidebar background (Pale Ice) <<< */
+
+      /* Village markers */
+      --village-default-color: #006D77;  /* >>> USER: default marker (Deep Aqua) <<< */
+      --village-highlight-color: #F4A261;/* >>> USER: highlighted marker (Warm Orange) <<< */
+      --village-muted-color: #83C5BE;    /* >>> USER: dimmed marker (Seafoam Teal) <<< */
+
+      /* Keyword / tag chips */
+      --keyword-tag-bg: #FFFFFF;         /* >>> USER: tag bg (White) <<< */
+      --keyword-tag-text: #006D77;       /* >>> USER: tag text (Deep Aqua) <<< */
+      --keyword-tag-active-bg: #E76F51;  /* >>> USER: active tag bg (Terracotta) <<< */
+      --keyword-tag-active-text: #FFFFFF;/* >>> USER: active tag text (White) <<< */
+
+      /* Document list & cards */
+      --doc-item-bg: #FFFFFF;            /* >>> USER: card surface <<< */
+      --doc-item-border: #83C5BE;        /* >>> USER: card border (Seafoam Teal) <<< */
+      --doc-item-active-border: #E76F51; /* >>> USER: active card border (Terracotta) <<< */
+      --doc-item-title-text: #264653;    /* >>> USER: title text (Dark Teal) <<< */
+      --doc-item-meta-text: #527A7D;     /* >>> USER: meta text (Muted Teal) <<< */
+
+      /* Buttons */
+      --button-bg: #006D77;              /* >>> USER: button bg (Deep Aqua) <<< */
+      --button-text: #FFFFFF;
+      --button-bg-hover: #005A62;        /* >>> USER: button hover (darker Deep Aqua) <<< */
+      --reset-button-bg: #7D7C7B;        /* >>> USER: reset button (Stone Grey) <<< */
+      --reset-button-text: #FFFFFF;
+
+      /* Tooltips (Map Tip) */
+      --tooltip-bg: #333333;             /* >>> USER: tooltip bg <<< */
+      --tooltip-text: #FFFFFF;           /* >>> USER: tooltip text <<< */
+      --tooltip-border: #F2F2F2;         /* >>> USER: tooltip border <<< */
+
+      /* Layout */
+      --sidebar-width: 420px;            /* >>> USER: sidebar width <<< */
+      --transition-speed: 0.15s ease;    /* >>> USER: animation speed <<< */
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background: var(--map-bg-color);
+    }
+
+    /* ================================================================
+       LAYOUT: flex row — sidebar (left) + map (right)
+       ================================================================ */
+    .app-shell {
+      display: flex;
+      height: 100vh;
+      background: var(--map-bg-color);
+    }
+
+    /* ── LEFT PANEL: Sidebar ─────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-width);
+      max-width: 100%;
+      background: var(--sidebar-bg-color);
+      border-right: 1px solid rgba(0, 0, 0, 0.06);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      z-index: 1000;
+    }
+
+    .sidebar-header {
+      padding: 1.25rem 1.25rem 0.9rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      background: var(--village-default-color);
+      color: #fff;
+      text-align: center;
+    }
+    .sidebar-header h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      line-height: 1.4;
+      font-weight: 700;
+    }
+    .sidebar-header p {
+      margin: 0.45rem 0 0;
+      font-size: 0.85rem;
+      font-style: italic;
+      opacity: 0.9;
+    }
+
+    /* ── Filters section ─────────────────────────────────────────────── */
+    .filters {
+      padding: 0.75rem 1.25rem 0.5rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+    }
+    .filter-label {
+      margin: 0 0 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--doc-item-meta-text);
+    }
+
+    .keyword-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-bottom: 0.75rem;
+    }
+    .tag {
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: var(--keyword-tag-bg);
+      color: var(--keyword-tag-text);
+      font-size: 0.75rem;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background var(--transition-speed), color var(--transition-speed),
+                  border-color var(--transition-speed), transform 0.1s ease;
+      user-select: none;
+    }
+    .tag:hover {
+      transform: translateY(-1px);
+      border-color: rgba(0, 0, 0, 0.08);
+    }
+    .tag.active {
+      background: var(--keyword-tag-active-bg);
+      color: var(--keyword-tag-active-text);
+      font-weight: 600;
+    }
+
+    .doc-filter-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .doc-filter-select {
+      flex: 1;
+      padding: 0.3rem 0.4rem;
+      border-radius: 4px;
+      border: 1px solid var(--doc-item-border);
+      font-size: 0.8rem;
+      background: var(--doc-item-bg);
+      color: var(--doc-item-title-text);
+      cursor: pointer;
+    }
+    .doc-filter-select:focus {
+      outline: 2px solid var(--village-highlight-color);
+    }
+
+    .btn {
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      border: none;
+      font-size: 0.72rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background var(--transition-speed), opacity var(--transition-speed);
+    }
+    .btn-reset {
+      background: var(--reset-button-bg);
+      color: var(--reset-button-text);
+    }
+    .btn-reset:hover { opacity: 0.85; }
+
+    /* ── Main scrollable area ────────────────────────────────────────── */
+    .sidebar-main {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Document list ───────────────────────────────────────────────── */
+    .doc-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem 1.25rem 1rem;
+    }
+    .doc-list::-webkit-scrollbar { width: 5px; }
+    .doc-list::-webkit-scrollbar-thumb {
+      background: var(--doc-item-border);
+      border-radius: 3px;
+    }
+
+    .doc-card {
+      background: var(--doc-item-bg);
+      border-radius: 6px;
+      border: 1px solid var(--doc-item-border);
+      padding: 0.6rem 0.7rem;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+      transition: border-color var(--transition-speed), box-shadow var(--transition-speed),
+                  transform 0.1s ease;
+    }
+    .doc-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    }
+    .doc-card.active {
+      border-color: var(--doc-item-active-border);
+      box-shadow: 0 0 0 1px rgba(198, 93, 59, 0.4);
+    }
+    .doc-title {
+      margin: 0 0 0.2rem;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--doc-item-title-text);
+    }
+    .doc-meta {
+      margin: 0;
+      font-size: 0.72rem;
+      color: var(--doc-item-meta-text);
+      line-height: 1.5;
+    }
+    .doc-links {
+      margin-top: 0.35rem;
+      display: flex;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
+    .doc-link {
+      font-size: 0.7rem;
+      color: var(--village-default-color);
+      text-decoration: none;
+    }
+    .doc-link:hover {
+      color: var(--village-highlight-color);
+      text-decoration: underline;
+    }
+
+    /* ── Detail panel ────────────────────────────────────────────────── */
+    .detail-panel {
+      border-top: 1px solid rgba(0, 0, 0, 0.06);
+      padding: 0.6rem 1.25rem 0.8rem;
+      background: rgba(255, 255, 255, 0.65);
+      max-height: 45vh;
+      overflow-y: auto;
+    }
+    .detail-heading {
+      margin: 0 0 0.2rem;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--village-default-color);
+    }
+    .detail-subheading {
+      margin: 0 0 0.35rem;
+      font-size: 0.72rem;
+      color: var(--doc-item-meta-text);
+      line-height: 1.5;
+    }
+    .detail-body {
+      font-size: 0.75rem;
+      color: #555;
+      line-height: 1.65;
+      margin-bottom: 0.4rem;
+      white-space: pre-wrap;
+    }
+    .detail-section-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--doc-item-title-text);
+      margin-top: 0.5rem;
+      margin-bottom: 0.2rem;
+    }
+    .detail-tags-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      margin-top: 0.3rem;
+    }
+    .detail-mini-tag {
+      font-size: 0.68rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      background: var(--keyword-tag-bg);
+      color: var(--keyword-tag-text);
+    }
+    .detail-collocate-chip {
+      font-size: 0.65rem;
+      padding: 0.12rem 0.4rem;
+      border-radius: 6px;
+      background: rgba(131, 197, 190, 0.25);
+      color: var(--keyword-tag-text);
+    }
+
+    /* VOSviewer link button — lighter, high-contrast version */
+    .vos-link {
+      display: inline-block;
+      margin-top: 0.35rem;
+      padding: 0.35rem 0.85rem;
+      background: var(--keyword-tag-bg);      /* >>> USER: VOSviewer button background (light seafoam) <<< */
+      color: var(--village-default-color);    /* >>> USER: VOSviewer button text (deep teal, high contrast) <<< */
+      text-decoration: none;
+      border-radius: 4px;
+      font-size: 0.74rem;
+      font-weight: 600;
+      border: 1px solid rgba(17, 76, 92, 0.25);
+      transition: background var(--transition-speed), transform 0.1s ease;
+    }
+    .vos-link:hover {
+      background: #cce5eb;
+      transform: translateY(-1px);
+    }
+
+    /* Word cloud image */
+    .wordcloud-img {
+      max-width: 100%;
+      height: auto;
+      margin-top: 0.3rem;
+      border: 1px solid var(--doc-item-border);
+      border-radius: 4px;
+    }
+
+    /* PDF / transcript embeds */
+    .embed-frame {
+      width: 100%;
+      border: 1px solid var(--doc-item-border);
+      border-radius: 4px;
+      margin-top: 0.3rem;
+      background: var(--sidebar-bg-color);
+    }
+
+    /* ── RIGHT PANEL: Map + VOSviewer (dual view) ─────────────────────
+       The map panel is split into two halves:
+         Left half  — Leaflet map (#map)
+         Right half — VOSviewer iframe (#network-panel)
+       Clicking a village marker loads its VOSviewer network in the
+       right half instead of opening a new tab.                       */
+    .map-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      position: relative;
+    }
+
+    /* Dual-view container: map (left) + splitter + VOSviewer (right) */
+    .dual-view {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+    .dual-view #map {
+      flex: 0 0 50%;
+      width: 50% !important;
+      min-height: 320px;
+      min-width: 0;
+    }
+
+    /* Draggable splitter between map and network panel */
+    .splitter {
+      flex: 0 0 8px;
+      background: var(--doc-item-border);
+      cursor: col-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      position: relative;
+      z-index: 10;
+      transition: background var(--transition-speed);
+    }
+    .splitter:hover {
+      background: var(--village-muted-color);
+    }
+    .splitter::after {
+      content: "⋮⋮";
+      font-size: 0.6rem;
+      color: rgba(0, 0, 0, 0.35);
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+    .splitter.collapsed {
+      cursor: pointer;
+      background: var(--village-muted-color);
+    }
+    .splitter.collapsed::after {
+      content: "◀";
+      font-size: 0.55rem;
+      letter-spacing: 0;
+    }
+    .dual-view:not(.collapsed) .splitter:not(:hover):not(.dragging) {
+      /* keep subtle */
+    }
+
+    #network-panel {
+      flex: 1;
+      padding: 0.6rem 0.8rem;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: var(--sidebar-bg-color);
+      overflow: auto;
+    }
+
+    /* Collapsed state: hide network panel, splitter sits at right edge */
+    .dual-view.collapsed #map {
+      flex: 1 1 auto !important;
+      width: auto !important;
+    }
+    .dual-view.collapsed #network-panel {
+      display: none;
+    }
+    .dual-view.collapsed .splitter {
+      border-left: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    .dual-view.collapsed .splitter::after {
+      content: "▶";
+      font-size: 0.55rem;
+      letter-spacing: 0;
+    }
+
+    #network-panel h3 {
+      margin: 0 0 0.2rem;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--village-default-color);
+    }
+    #network-panel p {
+      margin: 0 0 0.5rem;
+      font-size: 0.72rem;
+      color: var(--doc-item-meta-text);
+    }
+    #vos-frame {
+      flex: 1;
+      width: 100%;
+      min-height: 350px;
+      border: 1px solid var(--doc-item-border);
+      border-radius: 4px;
+      background: #fff;
+    }
+
+    .map-header {
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fff;
+    }
+    .map-title {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--doc-item-title-text);
+    }
+    .map-subtitle {
+      margin: 0;
+      font-size: 0.7rem;
+      color: var(--doc-item-meta-text);
+    }
+
+    .map-legend {
+      display: flex;
+      gap: 0.75rem;
+      font-size: 0.68rem;
+      align-items: center;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .legend-swatch {
+      width: 12px; height: 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 0, 0, 0.1);
+    }
+    .legend-swatch.default    { background: var(--village-default-color); }
+    .legend-swatch.highlight  { background: var(--village-highlight-color); }
+    .legend-swatch.muted      { background: var(--village-muted-color); opacity: 0.5; }
+
+    #map {
+      flex: 1;
+      min-height: 320px;
+      background: var(--map-bg-color);
+    }
+    /* Override: when inside .dual-view, map is 50% width */
+
+    /* ── Floating Map Tip tooltip ──────────────────────────────────────
+       A standalone div that follows the cursor on hover.
+       Works alongside permanent Leaflet labels.
+       Colors controlled by --tooltip-* variables.                     */
+    .custom-tooltip {
+      position: fixed;
+      pointer-events: none;
+      background: var(--tooltip-bg);
+      color: var(--tooltip-text);
+      border: 1px solid var(--tooltip-border);
+      padding: 0.4rem 0.55rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      max-width: 280px;
+      z-index: 2000;
+      display: none;
+      white-space: normal;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    }
+    .custom-tooltip .tip-name {
+      font-weight: 700;
+      font-size: 0.8rem;
+      margin-bottom: 2px;
+    }
+    .custom-tooltip .tip-kw {
+      font-size: 0.68rem;
+      opacity: 0.9;
+      line-height: 1.4;
+    }
+    .custom-tooltip .tip-coll {
+      font-size: 0.62rem;
+      opacity: 0.7;
+      line-height: 1.4;
+      margin-top: 2px;
+    }
+
+    /* ── Village popup (qgis2web-style table) ──────────────────────────
+       Mimics the original index.html popup: clean table, dark text,
+       bold labels, auto-linked URLs, and constrained images.            */
+    /* Allow popup to grow wide enough for the word cloud image */
+    .leaflet-popup-content {
+      max-width: 1100px !important;
+      width: auto !important;
+    }
+
+    .village-popup {
+      font-size: 0.78rem;
+      line-height: 1.5;
+      color: #222;
+      max-width: 1100px;
+    }
+    .village-popup table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: auto;
+    }
+    .village-popup th,
+    .village-popup td {
+      padding: 0.35rem 0.5rem;
+      vertical-align: top;
+      text-align: left;
+    }
+    .village-popup th {
+      font-weight: 700;
+      color: #111;
+      white-space: nowrap;
+      width: 1%;
+      min-width: 110px;
+    }
+    .village-popup td {
+      color: #333;
+      word-break: break-word;
+    }
+    .village-popup tr + tr th,
+    .village-popup tr + tr td {
+      border-top: 1px solid #e0e0e0;
+    }
+    .village-popup td[colspan="2"] {
+      border-top: 1px solid #e0e0e0;
+      padding-top: 0.45rem;
+    }
+    .village-popup td[colspan="2"] strong {
+      display: block;
+      margin-bottom: 0.15rem;
+      color: #111;
+    }
+    .village-popup a {
+      color: #0b5ed7 !important;
+      text-decoration: underline;
+    }
+    .village-popup a:hover {
+      color: #0948a8 !important;
+    }
+    .village-popup img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin-top: 0.25rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    /* ── Permanent label styling (from qgis2web.css, preserved) ──────── */
+    .css_By_Villages_1 {
+      pointer-events: none !important;
+      text-shadow: -3px -3px 0 #ffffff, -3px -2px 0 #ffffff, -3px -1px 0 #ffffff,
+        -3px 0px 0 #ffffff, -3px 1px 0 #ffffff, -3px 2px 0 #ffffff, -3px 3px 0 #ffffff,
+        -2px -3px 0 #ffffff, -2px -2px 0 #ffffff, -2px -1px 0 #ffffff, -2px 0px 0 #ffffff,
+        -2px 1px 0 #ffffff, -2px 2px 0 #ffffff, -2px 3px 0 #ffffff,
+        -1px -3px 0 #ffffff, -1px -2px 0 #ffffff, -1px -1px 0 #ffffff, -1px 0px 0 #ffffff,
+        -1px 1px 0 #ffffff, -1px 2px 0 #ffffff, -1px 3px 0 #ffffff,
+        0px -3px 0 #ffffff, 0px -2px 0 #ffffff, 0px -1px 0 #ffffff,
+        0px 1px 0 #ffffff, 0px 2px 0 #ffffff, 0px 3px 0 #ffffff,
+        1px -3px 0 #ffffff, 1px -2px 0 #ffffff, 1px -1px 0 #ffffff, 1px 0px 0 #ffffff,
+        1px 1px 0 #ffffff, 1px 2px 0 #ffffff, 1px 3px 0 #ffffff,
+        2px -3px 0 #ffffff, 2px -2px 0 #ffffff, 2px -1px 0 #ffffff, 2px 0px 0 #ffffff,
+        2px 1px 0 #ffffff, 2px 2px 0 #ffffff, 2px 3px 0 #ffffff,
+        3px -3px 0 #ffffff, 3px -2px 0 #ffffff, 3px -1px 0 #ffffff, 3px 0px 0 #ffffff,
+        3px 1px 0 #ffffff, 3px 2px 0 #ffffff, 3px 3px 0 #ffffff;
+    }
+
+    /* ── Responsive ────────────────────────────────────────────────────
+       >>> USER: Adjust breakpoint (800px) as needed <<<                */
+    @media (max-width: 800px) {
+      .app-shell { flex-direction: column; }
+      .sidebar { width: 100%; max-height: 55vh; }
+      .map-panel { max-height: 60vh; }
+      .dual-view { flex-direction: column; }
+      .dual-view #map { width: 100% !important; flex: none; height: 250px !important; min-height: 250px; }
+      #network-panel { min-height: 200px; border-left: none; border-top: 1px solid rgba(0,0,0,0.08); }
+      .map-legend { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+
+    <!-- ================================================================
+         LEFT: STORY / DOCUMENT PANEL
+         ================================================================ -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>1992年東涌田野調查檔案<br>讓我們一起走進村落</h1>
+        <p>1992 Tung Chung Field Research Archive<br>Let's Walk into the Villages Together</p>
+      </div>
+
+      <!-- ── FILTERS ────────────────────────────────────────────────── -->
+      <div class="filters">
+        <p class="filter-label">關鍵字 Keywords</p>
+        <div class="keyword-tags" id="keywordTags"></div>
+
+        <p class="filter-label">文件編號 Original Document</p>
+        <div class="doc-filter-row">
+          <select id="docFilterSelect" class="doc-filter-select">
+            <option value="">— 全部 All documents —</option>
+          </select>
+          <button id="clearFiltersBtn" class="btn btn-reset">清除 Clear</button>
+        </div>
+      </div>
+
+      <!-- ── MAIN: document list + detail panel ─────────────────────── -->
+      <div class="sidebar-main">
+        <div class="doc-list" id="docList"></div>
+
+        <div class="detail-panel" id="detailPanel">
+          <h3 class="detail-heading" id="detailTitle">選擇文件或村落查看詳情</h3>
+          <p class="detail-subheading" id="detailMeta">
+            Select a document card or click a village marker on the map.
+          </p>
+          <div class="detail-body" id="detailBody"></div>
+          <div class="detail-tags-row" id="detailTagsRow"></div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ================================================================
+         RIGHT: MAP PANEL
+         ================================================================ -->
+    <section class="map-panel">
+      <header class="map-header">
+        <div>
+          <h2 class="map-title">東涌村落地圖 Tung Chung Village Map</h2>
+          <p class="map-subtitle">Hover for Map Tip · Click village to load VOSviewer network →</p>
+        </div>
+        <div class="map-legend">
+          <div class="legend-item"><span class="legend-swatch default"></span> Default</div>
+          <div class="legend-item"><span class="legend-swatch highlight"></span> Highlighted</div>
+          <div class="legend-item"><span class="legend-swatch muted"></span> Dimmed</div>
+        </div>
+      </header>
+
+      <!-- ── DUAL VIEW: Map (left) + splitter + VOSviewer iframe (right) ── -->
+      <div class="dual-view" id="dualView">
+        <div id="map"></div>
+        <div class="splitter" id="splitter" title="Drag to resize · Click to hide/show"></div>
+        <aside id="network-panel">
+          <h3 id="network-title">Village Network</h3>
+          <p id="network-hint">Click a village point on the map to load its co-occurrence network.</p>
+          <iframe id="vos-frame" title="VOSviewer network" src="about:blank"></iframe>
+        </aside>
+      </div>
+      <div id="mapTooltip" class="custom-tooltip"></div>
+    </section>
+
+  </div>
+
+  <!-- ================================================================
+       qgis2web original JS (loaded in original order — do NOT change)
+       ================================================================ -->
+  <script src="js/qgis2web_expressions.js"></script>
+  <script src="js/leaflet.js"></script>
+  <script src="js/L.Control.Layers.Tree.min.js"></script>
+  <script src="js/leaflet.rotatedMarker.js"></script>
+  <script src="js/leaflet.pattern.js"></script>
+  <script src="js/leaflet-hash.js"></script>
+  <script src="js/Autolinker.min.js"></script>
+  <script src="js/rbush.min.js"></script>
+  <script src="js/labelgun.min.js"></script>
+  <script src="js/labels.js"></script>
+  <script src="js/leaflet.photon.js"></script>
+  <script src="js/leaflet.markercluster.js"></script>
+
+  <!-- GeoJSON data layer (loads global var json_By_Villages_1) -->
+  <script src="data/By_Villages_1.js"></script>
+
+  <!-- ================================================================
+       STORY MAP LOGIC
+       All data is read from json_By_Villages_1 (the real GeoJSON).
+       Nothing is fabricated.
+       ================================================================ -->
+  <script>
+  (function () {
+    "use strict";
+
+    // ================================================================
+    // HELPERS
+    // ================================================================
+
+    /** Read a CSS variable value from :root */
+    function getCssVar(name) {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue(name)
+        .trim();
+    }
+
+    /** Autolinker instance (same config as original qgis2web index.html) */
+    var autolinker = new Autolinker({
+      truncate: { length: 30, location: "smart" },
+    });
+
+    /**
+     * Split the Keywords field into individual keywords.
+     * Delimiters: 、 (U+3001), ， (full-width comma), , (half-width),
+     *             ； (full-width semicolon), ; (half-width)
+     * Also trims whitespace (e.g. " 侯王 " → "侯王").
+     *
+     * >>> USER: If your data uses a different delimiter, add it to the regex <<<
+     */
+    function splitKeywords(str) {
+      if (!str) return [];
+      return str
+        .split(/[、，,；;]/)
+        .map(function (s) { return s.trim(); })
+        .filter(function (s) { return s.length > 0; });
+    }
+
+    /**
+     * Parse the Collocates field into structured pairs.
+     * Format: "Keyword‧Collocate；… | Keyword‧Collocate；…"
+     *   ‧ (U+2027) or • (U+2022) separates keyword from collocate
+     *   ；or ; separates pairs within a group
+     *   | separates keyword groups
+     *
+     * >>> USER: If your collocates use a different separator, modify below <<<
+     */
+    function parseCollocates(str) {
+      if (!str) return [];
+      var results = [];
+      var groups = str.split("|");
+      for (var g = 0; g < groups.length; g++) {
+        var pairs = groups[g].split(/[；;]/);
+        for (var p = 0; p < pairs.length; p++) {
+          var pair = pairs[p].trim();
+          if (!pair) continue;
+          var parts = pair.split(/[‧•]/);
+          if (parts.length >= 2) {
+            results.push({
+              keyword: parts[0].trim(),
+              collocate: parts.slice(1).join("‧").trim(),
+            });
+          }
+        }
+      }
+      return results;
+    }
+
+    /** Split Original_Material_ID into individual Doc IDs */
+    function splitDocIds(str) {
+      if (!str) return [];
+      return str
+        .split(/[,，]/)
+        .map(function (s) { return s.trim(); })
+        .filter(function (s) { return s.length > 0; });
+    }
+
+    /** Escape HTML special characters for safe popup rendering */
+    function escapeHtml(str) {
+      if (str == null) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    /** Convert plain text to HTML with autolinked URLs */
+    function autoLinkText(str) {
+      if (str == null) return "";
+      return autolinker.link(escapeHtml(str).replace(/\n/g, "<br>"));
+    }
+
+    /** Build the word cloud image relative path (qgis2web path transform) */
+    function getWordCloudPath(photoPath) {
+      if (!photoPath) return "";
+      return "images/" + photoPath.replace(/[\\/:]/g, "_").trim();
+    }
+
+    // ================================================================
+    // EXTRACT DATA FROM GEOJSON
+    // Build plain JS arrays (like the dummy prototype) from the real data.
+    // ================================================================
+
+    var villages = [];   // array of village objects
+    var documents = [];  // array of document objects (one per unique Doc ID)
+
+    var docMap = {};     // docId → document object (for quick lookup)
+    var keywordSet = {}; // keyword → true (for tag building)
+
+    // Iterate the GeoJSON features
+    var features = json_By_Villages_1.features || [];
+    for (var fi = 0; fi < features.length; fi++) {
+      var p = features[fi].properties;
+      var coords = features[fi].geometry.coordinates;
+
+      var vKws = splitKeywords(p["Keywords"]);
+      var vColl = parseCollocates(p["Collocates"]);
+      var vDocs = splitDocIds(p["Original_Material_ID"]);
+
+      // Build village object (mirrors dummy prototype structure)
+      var village = {
+        name: p["Village_Name"] || "",
+        villageId: p["Village_ID"] || "",
+        placeType: p["Place_Type"] || "",
+        lat: coords[1],
+        lng: coords[0],
+        docIds: vDocs,
+        keywords: vKws,
+        collocates: vColl,
+        collocatesRaw: p["Collocates"] || "",
+        vosUrl: p["VOS_URL"] || "",
+        introduction: p["Introduction"] || "",
+        alternativeNames: p["Alternative_Names"] || "",
+        note: p["Note"] || "",
+        wordCloudPath: getWordCloudPath(p["WordCloud_PhotoPath"]),
+      };
+      villages.push(village);
+
+      // Collect keywords for tag building
+      for (var k = 0; k < vKws.length; k++) {
+        keywordSet[vKws[k]] = true;
+      }
+
+      // Build / update document objects
+      for (var d = 0; d < vDocs.length; d++) {
+        var did = vDocs[d];
+        if (!docMap[did]) {
+          docMap[did] = {
+            id: did,
+            villages: [],
+            keywords: [],
+            collocates: [],
+          };
+        }
+        // Add village name if not already present
+        if (docMap[did].villages.indexOf(village.name) === -1) {
+          docMap[did].villages.push(village.name);
+        }
+        // Merge keywords
+        for (var k2 = 0; k2 < vKws.length; k2++) {
+          if (docMap[did].keywords.indexOf(vKws[k2]) === -1) {
+            docMap[did].keywords.push(vKws[k2]);
+          }
+        }
+      }
+    }
+
+    // Convert docMap to sorted array
+    var allDocIds = Object.keys(docMap).sort();
+    for (var di = 0; di < allDocIds.length; di++) {
+      documents.push(docMap[allDocIds[di]]);
+    }
+
+    // ================================================================
+    // GOOGLE DRIVE FILE IDS (shared folder)
+    // >>> USER: Update these IDs if files are re-uploaded <<<
+    // Folder: https://drive.google.com/drive/folders/1-lAHth_EbdlJJPJctrFjtRGY7ImqF442
+    // ================================================================
+    var DRIVE_PDF_IDS = {
+      "T03D02": "1NLEm7RScxBYp-f-8v2ILfL88alvRfvEw",
+      "T03D03": "1uOzKdPMaB5n_I296-RwNngmcccViTofx",
+      "T03D04": "1uZ4Y0wojD4GUMaj6U-q7AOibg7xaUjqH",
+      "T03D06": "1Scf5hXNn5mWOXcKpPfx6gMRFP34VZT2M",
+      "T03D08": "1zjEwd8EJauyQrxdRKGQP-6-N-I9qAUrW",
+      "T03D09": "14IxFiO9NxMy3h6vG6EtqE6PPo5YsCC4l",
+      "T03D10": "1CAFyzclqx5uh0-6qo9mcpOIadJsG6pkd"
+    };
+    var DRIVE_TXT_IDS = {
+      "T03D02": "1IQxYPZTbakFZlPY_8Dq9FHr639NwAOzf",
+      "T03D03": "1Cme5X6a9P58rcqIwnAOlUTvdNi-rbFTd",
+      "T03D04": "1broQf8cAOU47IrpUWGJu8BQuUhbdtQMt",
+      "T03D06": "1TBzqohlvqNo_XM6sZlDbFodVU0P1bbaG",
+      "T03D08": "1JkE72bz6ZuXVdj-fEeMH1rE_FBEnbfGL",
+      "T03D09": "1ZpMPef51jQuaX1zrShn1u88rBhhuCpxX",
+      "T03D10": "1PcW9musoK2IWPxEC2MJ6i1UrqHtyrUlF"
+    };
+
+    /** Build Google Drive preview URL for a PDF doc ID */
+    function getDrivePdfUrl(docId) {
+      var id = DRIVE_PDF_IDS[docId];
+      return id ? "https://drive.google.com/file/d/" + id + "/preview" : "";
+    }
+
+    /** Build Google Drive view URL for a TXT doc ID */
+    function getDriveTxtUrl(docId) {
+      var id = DRIVE_TXT_IDS[docId];
+      return id ? "https://drive.google.com/file/d/" + id + "/view" : "";
+    }
+
+    // ================================================================
+    // UI STATE
+    // ================================================================
+    var activeKeyword = null;  // currently selected keyword (single-select)
+    var activeDocId = null;   // currently selected document ID
+    var markersByName = {};   // village name → Leaflet circleMarker
+
+    // ================================================================
+    // SIDEBAR — KEYWORD TAGS
+    // ================================================================
+    var keywordTagsContainer = document.getElementById("keywordTags");
+    var docFilterSelect = document.getElementById("docFilterSelect");
+    var docListElem = document.getElementById("docList");
+    var clearFiltersBtn = document.getElementById("clearFiltersBtn");
+
+    function buildKeywordTags() {
+      var allKeywords = Object.keys(keywordSet).sort();
+      keywordTagsContainer.innerHTML = "";
+
+      for (var i = 0; i < allKeywords.length; i++) {
+        var kw = allKeywords[i];
+        var span = document.createElement("span");
+        span.className = "tag";
+        span.textContent = kw;
+        span.dataset.keyword = kw;
+        span.addEventListener("click", function () {
+          var keyword = this.dataset.keyword;
+          // Toggle: click same tag again to deactivate
+          if (activeKeyword === keyword) {
+            activeKeyword = null;
+          } else {
+            activeKeyword = keyword;
+          }
+          updateKeywordTagStates();
+          applyFilters();
+        });
+        keywordTagsContainer.appendChild(span);
+      }
+    }
+
+    function updateKeywordTagStates() {
+      var tags = keywordTagsContainer.querySelectorAll(".tag");
+      for (var i = 0; i < tags.length; i++) {
+        if (tags[i].dataset.keyword === activeKeyword) {
+          tags[i].classList.add("active");
+        } else {
+          tags[i].classList.remove("active");
+        }
+      }
+    }
+
+    // ================================================================
+    // SIDEBAR — DOCUMENT FILTER DROPDOWN + CLEAR BUTTON
+    // ================================================================
+    function buildDocFilter() {
+      for (var i = 0; i < documents.length; i++) {
+        var opt = document.createElement("option");
+        opt.value = documents[i].id;
+        opt.textContent = documents[i].id + " (" + documents[i].villages.length + " villages)";
+        docFilterSelect.appendChild(opt);
+      }
+
+      docFilterSelect.addEventListener("change", function () {
+        activeDocId = docFilterSelect.value || null;
+        if (activeDocId) {
+          selectDocCard(activeDocId);
+        } else {
+          resetDetailPanel();
+        }
+        applyFilters();
+      });
+
+      clearFiltersBtn.addEventListener("click", function () {
+        activeKeyword = null;
+        activeDocId = null;
+        docFilterSelect.value = "";
+        updateKeywordTagStates();
+        resetDetailPanel();
+        applyFilters();
+        // Reset map view to fit all villages
+        if (villages.length > 0) {
+          var bounds = L.latLngBounds(
+            villages.map(function (v) { return [v.lat, v.lng]; })
+          ).pad(0.2);
+          map.fitBounds(bounds);
+        }
+      });
+    }
+
+    // ================================================================
+    // SIDEBAR — DOCUMENT CARDS
+    // ================================================================
+    function buildDocCards() {
+      docListElem.innerHTML = "";
+
+      for (var i = 0; i < documents.length; i++) {
+        var doc = documents[i];
+
+        var card = document.createElement("article");
+        card.className = "doc-card";
+        card.dataset.docId = doc.id;
+
+        // Title
+        var title = document.createElement("h3");
+        title.className = "doc-title";
+        title.textContent = doc.id;
+        card.appendChild(title);
+
+        // Meta
+        var meta = document.createElement("p");
+        meta.className = "doc-meta";
+        meta.textContent = "Villages: " + doc.villages.join("、");
+        card.appendChild(meta);
+
+        // Links — Google Drive
+        var pdfUrl = getDrivePdfUrl(doc.id);
+        var txtUrl = getDriveTxtUrl(doc.id);
+        var links = document.createElement("div");
+        links.className = "doc-links";
+        links.innerHTML =
+          '<a class="doc-link" href="' + pdfUrl + '" target="_blank">' +
+          '<i class="fas fa-file-pdf"></i> PDF</a>' +
+          '<a class="doc-link" href="' + txtUrl + '" target="_blank">' +
+          '<i class="fas fa-file-alt"></i> TXT</a>';
+        card.appendChild(links);
+
+        // Click → select this document
+        card.addEventListener("click", function (e) {
+          // Don't trigger if user clicked a link inside the card
+          if (e.target.tagName === "A" || e.target.closest("a")) return;
+          var did = this.dataset.docId;
+          activeDocId = did;
+          docFilterSelect.value = did;
+          selectDocCard(did);
+          applyFilters();
+        });
+
+        docListElem.appendChild(card);
+      }
+    }
+
+    function highlightSelectedDocCard() {
+      var cards = docListElem.querySelectorAll(".doc-card");
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].dataset.docId === activeDocId) {
+          cards[i].classList.add("active");
+        } else {
+          cards[i].classList.remove("active");
+        }
+      }
+    }
+
+    function selectDocCard(docId) {
+      highlightSelectedDocCard();
+      var doc = docMap[docId];
+      if (doc) updateDetailPanel(doc);
+
+      // Zoom to matching villages on the map
+      var related = villages.filter(function (v) {
+        return v.docIds.indexOf(docId) !== -1;
+      });
+      if (related.length > 0) {
+        var bounds = L.latLngBounds(
+          related.map(function (v) { return [v.lat, v.lng]; })
+        ).pad(0.3);
+        map.fitBounds(bounds, { maxZoom: 18 });
+      }
+    }
+
+    // ================================================================
+    // DETAIL PANEL
+    // Shows when a document card or village marker is selected.
+    // ================================================================
+    var detailTitle = document.getElementById("detailTitle");
+    var detailMeta = document.getElementById("detailMeta");
+    var detailBody = document.getElementById("detailBody");
+    var detailTagsRow = document.getElementById("detailTagsRow");
+
+    function resetDetailPanel() {
+      detailTitle.textContent = "選擇文件或村落查看詳情";
+      detailMeta.textContent = "Select a document card or click a village marker on the map.";
+      detailBody.innerHTML = "";
+      detailTagsRow.innerHTML = "";
+    }
+
+    /** Show document details (when a doc card is clicked) */
+    function updateDetailPanel(doc) {
+      detailTitle.textContent = doc.id;
+      detailMeta.textContent = "Villages: " + doc.villages.join("、");
+
+      detailBody.innerHTML = "";
+
+      // Scan PDF embed — Google Drive preview iframe
+      var scanLabel = document.createElement("div");
+      scanLabel.className = "detail-section-label";
+      scanLabel.textContent = "掃描檔 Scan PDF";
+      detailBody.appendChild(scanLabel);
+
+      var pdfUrl = getDrivePdfUrl(doc.id);
+      var pdfFrame = document.createElement("iframe");
+      pdfFrame.src = pdfUrl;
+      pdfFrame.className = "embed-frame";
+      pdfFrame.style.height = "400px";
+      pdfFrame.setAttribute("allowfullscreen", "true");
+      pdfFrame.style.border = "1px solid var(--doc-item-border)";
+      pdfFrame.style.borderRadius = "4px";
+      detailBody.appendChild(pdfFrame);
+
+      // Fallback link below the iframe
+      var pdfLink = document.createElement("div");
+      pdfLink.style.marginTop = "0.3rem";
+      pdfLink.style.fontSize = "0.68rem";
+      pdfLink.innerHTML = '<a href="' + pdfUrl + '" target="_blank" style="color:var(--village-default-color);">' +
+        '<i class="fas fa-external-link-alt"></i> Open PDF in new tab</a>';
+      detailBody.appendChild(pdfLink);
+
+      // Transcript TXT embed — Google Drive view iframe
+      var txtLabel = document.createElement("div");
+      txtLabel.className = "detail-section-label";
+      txtLabel.textContent = "轉錄文字 Transcript";
+      detailBody.appendChild(txtLabel);
+
+      var txtUrl = getDriveTxtUrl(doc.id);
+      var txtFrame = document.createElement("iframe");
+      txtFrame.src = txtUrl;
+      txtFrame.className = "embed-frame";
+      txtFrame.style.height = "300px";
+      txtFrame.style.border = "1px solid var(--doc-item-border)";
+      txtFrame.style.borderRadius = "4px";
+      detailBody.appendChild(txtFrame);
+
+      // Fallback link below the iframe
+      var txtLink = document.createElement("div");
+      txtLink.style.marginTop = "0.3rem";
+      txtLink.style.fontSize = "0.68rem";
+      txtLink.innerHTML = '<a href="' + txtUrl + '" target="_blank" style="color:var(--village-default-color);">' +
+        '<i class="fas fa-external-link-alt"></i> Open TXT in new tab</a>';
+      detailBody.appendChild(txtLink);
+
+      // Tags row
+      detailTagsRow.innerHTML = "";
+      var idTag = document.createElement("span");
+      idTag.className = "detail-mini-tag";
+      idTag.textContent = "Doc " + doc.id;
+      detailTagsRow.appendChild(idTag);
+
+      for (var i = 0; i < doc.keywords.length; i++) {
+        var tag = document.createElement("span");
+        tag.className = "detail-mini-tag";
+        tag.textContent = doc.keywords[i];
+        detailTagsRow.appendChild(tag);
+      }
+    }
+
+    /** Show village details (when a map marker is clicked) */
+    function showVillageDetail(village) {
+      detailTitle.textContent = village.name;
+      detailMeta.textContent =
+        "ID: " + village.villageId +
+        "  •  Type: " + village.placeType +
+        "  •  Docs: " + village.docIds.join(", ");
+
+      detailBody.innerHTML = "";
+
+      // Introduction
+      if (village.introduction) {
+        var introLabel = document.createElement("div");
+        introLabel.className = "detail-section-label";
+        introLabel.textContent = "村落簡介 Introduction";
+        detailBody.appendChild(introLabel);
+
+        var introP = document.createElement("div");
+        introP.className = "detail-body";
+        introP.style.whiteSpace = "pre-wrap";
+        introP.textContent = village.introduction;
+        detailBody.appendChild(introP);
+      }
+
+      // Alternative names
+      if (village.alternativeNames) {
+        var altDiv = document.createElement("div");
+        altDiv.className = "detail-section-label";
+        altDiv.textContent = "別名 Alternative Names: " + village.alternativeNames;
+        detailBody.appendChild(altDiv);
+      }
+
+      // Keywords + Collocates
+      if (village.keywords.length > 0) {
+        var kwLabel = document.createElement("div");
+        kwLabel.className = "detail-section-label";
+        kwLabel.textContent = "關鍵字 Keywords / 共現詞 Collocates";
+        detailBody.appendChild(kwLabel);
+
+        // Group collocates by keyword
+        var grouped = {};
+        for (var c = 0; c < village.collocates.length; c++) {
+          var gkw = village.collocates[c].keyword;
+          if (!grouped[gkw]) grouped[gkw] = [];
+          grouped[gkw].push(village.collocates[c].collocate);
+        }
+
+        for (var gk in grouped) {
+          var row = document.createElement("div");
+          row.style.marginBottom = "0.2rem";
+          row.innerHTML = '<span style="font-weight:600;font-size:0.72rem;color:var(--doc-item-title-text);">' +
+                          gk + ": </span>";
+          for (var gi = 0; gi < grouped[gk].length; gi++) {
+            var chip = document.createElement("span");
+            chip.className = "detail-collocate-chip";
+            chip.textContent = grouped[gk][gi];
+            row.appendChild(chip);
+          }
+          detailBody.appendChild(row);
+        }
+      }
+
+      // VOSviewer link
+      if (village.vosUrl) {
+        var vosLink = document.createElement("a");
+        vosLink.className = "vos-link";
+        vosLink.href = village.vosUrl;
+        vosLink.target = "_blank";
+        vosLink.innerHTML = '<i class="fas fa-external-link-alt"></i> 開啟 VOSviewer Open VOSviewer';
+        detailBody.appendChild(vosLink);
+      }
+
+      // Word cloud
+      if (village.wordCloudPath) {
+        var wcLabel = document.createElement("div");
+        wcLabel.className = "detail-section-label";
+        wcLabel.textContent = "詞雲 Word Cloud";
+        detailBody.appendChild(wcLabel);
+
+        var wcImg = document.createElement("img");
+        wcImg.className = "wordcloud-img";
+        wcImg.src = village.wordCloudPath;
+        wcImg.alt = "Word Cloud for " + village.name;
+        detailBody.appendChild(wcImg);
+      }
+
+      // Tags row
+      detailTagsRow.innerHTML = "";
+      for (var i = 0; i < village.docIds.length; i++) {
+        var docTag = document.createElement("span");
+        docTag.className = "detail-mini-tag";
+        docTag.textContent = village.docIds[i];
+        detailTagsRow.appendChild(docTag);
+      }
+      for (var i2 = 0; i2 < village.keywords.length; i2++) {
+        var kwTag = document.createElement("span");
+        kwTag.className = "detail-mini-tag";
+        kwTag.textContent = village.keywords[i2];
+        detailTagsRow.appendChild(kwTag);
+      }
+
+      // Scroll detail panel into view
+      document.getElementById("detailPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    // ================================================================
+    // MAP + MARKERS
+    // Initializes the Leaflet map using qgis2web's base map image
+    // and adds village circleMarkers directly (NO cluster group —
+    // cluster groups intercept setStyle(), breaking filters).
+    // ================================================================
+    var map;
+    var mapTooltip = document.getElementById("mapTooltip");
+
+    function initMap() {
+      map = L.map("map", {
+        zoomControl: true,
+        maxZoom: 28,
+        minZoom: 1,
+      }).fitBounds([
+        [22.264437644655782, 113.9222683482376],
+        [22.2849542874941, 113.95182270209835],
+      ]);
+
+      // qgis2web attribution
+      map.attributionControl.setPrefix(
+        '<a href="https://github.com/qgis2web/qgis2web" target="_blank">qgis2web</a> &middot; ' +
+        '<a href="https://leafletjs.com">Leaflet</a> &middot; ' +
+        '<a href="https://qgis.org">QGIS</a>'
+      );
+
+      // ── Base map image overlay (from qgis2web) ──────────────────────
+      map.createPane("pane_baseMap");
+      map.getPane("pane_baseMap").style.zIndex = 400;
+      var baseMapImg = "data/Present_Merged_Clipped_Map_0.png";
+      var baseMapBounds = [
+        [22.268321663782963, 113.92373162252335],
+        [22.281142155081547, 113.9435462208303],
+      ];
+      L.imageOverlay(baseMapImg, baseMapBounds, {
+        pane: "pane_baseMap",
+      }).addTo(map);
+
+      // ── Village pane ────────────────────────────────────────────────
+      map.createPane("pane_villages");
+      map.getPane("pane_villages").style.zIndex = 401;
+      map.getPane("pane_villages").style["mix-blend-mode"] = "normal";
+
+      // ── Create circleMarker for each village ────────────────────────
+      var defaultColor = getCssVar("--village-default-color");
+
+      for (var i = 0; i < villages.length; i++) {
+        var v = villages[i];
+
+        var marker = L.circleMarker([v.lat, v.lng], {
+          pane: "pane_villages",
+          radius: 8,
+          color: "#ffffff",
+          weight: 2,
+          fillColor: defaultColor,
+          fillOpacity: 0.95,
+        }).addTo(map);
+
+        markersByName[v.name] = marker;
+
+        // ── Popup (qgis2web-style styled table) ───────────────────────
+        var popupRows = [];
+
+        popupRows.push(
+          "<tr><th scope='row'>Original_Material_ID</th><td>" +
+          autoLinkText(v.docIds.join(", ")) + "</td></tr>"
+        );
+        popupRows.push(
+          "<tr><th scope='row'>Village_ID</th><td>" + autoLinkText(v.villageId) + "</td></tr>"
+        );
+        popupRows.push(
+          "<tr><th scope='row'>Village_Name</th><td>" + autoLinkText(v.name) + "</td></tr>"
+        );
+        popupRows.push(
+          "<tr><th scope='row'>Place_Type</th><td>" + autoLinkText(v.placeType) + "</td></tr>"
+        );
+        if (v.introduction) {
+          popupRows.push(
+            "<tr><td colspan='2'><strong>Introduction</strong><br>" +
+            autoLinkText(v.introduction) + "</td></tr>"
+          );
+        }
+        if (v.keywords.length > 0) {
+          popupRows.push(
+            "<tr><th scope='row'>Keywords</th><td>" +
+            autoLinkText(v.keywords.join("、")) + "</td></tr>"
+          );
+        }
+        if (v.collocatesRaw) {
+          popupRows.push(
+            "<tr><td colspan='2'><strong>Collocates</strong><br>" +
+            autoLinkText(v.collocatesRaw) + "</td></tr>"
+          );
+        }
+        if (v.vosUrl) {
+          popupRows.push(
+            "<tr><td colspan='2'><strong>VOS_URL</strong><br>" +
+            autoLinkText(v.vosUrl) + "</td></tr>"
+          );
+        }
+        if (v.wordCloudPath) {
+          popupRows.push(
+            "<tr><td colspan='2'><strong>WordCloud_PhotoPath</strong><br>" +
+            '<img src="' + escapeHtml(v.wordCloudPath) + '" alt="Word Cloud for ' +
+            escapeHtml(v.name) + '"></td></tr>'
+          );
+        }
+        if (v.alternativeNames) {
+          popupRows.push(
+            "<tr><th scope='row'>Alternative_Names</th><td>" +
+            autoLinkText(v.alternativeNames) + "</td></tr>"
+          );
+        }
+        if (v.note) {
+          popupRows.push(
+            "<tr><th scope='row'>Note</th><td>" + autoLinkText(v.note) + "</td></tr>"
+          );
+        }
+
+        var popupHtml =
+          "<div class='village-popup'><table>" + popupRows.join("") + "</table></div>";
+        marker.bindPopup(popupHtml, { maxHeight: 400, maxWidth: 1100 });
+
+        // ── Permanent label (village name on map) ─────────────────────
+        marker.bindTooltip(
+          '<div style="color:#000;font-size:8pt;font-family:\'Apple LiGothic\',sans-serif;">' +
+            v.name + "</div>",
+          { permanent: true, offset: [0, -16], className: "css_By_Villages_1" }
+        );
+
+        // ── MAP TIP: hover tooltip via floating div ───────────────────
+        // Shows village name + keywords + collocates on hover.
+        // Uses a separate floating div so it coexists with the permanent label.
+        (function (village, mk) {
+          mk.on("mouseover", function (e) {
+            var html =
+              '<div class="tip-name">' + village.name + "</div>" +
+              '<div class="tip-kw"><strong>Keywords:</strong> ' +
+                village.keywords.join("、") + "</div>";
+            if (village.collocatesRaw) {
+              var shortColl = village.collocatesRaw.substring(0, 150);
+              if (shortColl.length < village.collocatesRaw.length) shortColl += "...";
+              html += '<div class="tip-coll"><strong>Collocates:</strong> ' + shortColl + "</div>";
+            }
+            showTooltip(e.originalEvent.clientX, e.originalEvent.clientY, html);
+          });
+
+          mk.on("mouseout", function () {
+            hideTooltip();
+          });
+
+          // ── DUAL VIEW: click loads VOSviewer in right panel ────────
+          // Instead of window.open(), load the VOSviewer URL into the
+          // iframe (#vos-frame) on the right side of the dual view.
+          // Also shows village detail in the sidebar.
+          mk.on("click", function (e) {
+            if (village.vosUrl) {
+              loadVosNetwork(village.vosUrl, village.name);
+            }
+            showVillageDetail(village);
+          });
+        })(v, marker);
+      }
+
+      // ── qgis2web label system (for permanent labels) ────────────────
+      // The labels.js file defines addLabel() and resetLabels().
+      // We need to register our markers with it.
+      var labelIdx = 0;
+      for (var name in markersByName) {
+        var mk = markersByName[name];
+        labels.push(mk);
+        totalMarkers += 1;
+        mk.added = true;
+        addLabel(mk, labelIdx);
+        labelIdx++;
+      }
+
+      L.ImageOverlay.include({
+        getBounds: function () { return this._bounds; },
+      });
+
+      resetLabels([L.layerGroup(Object.values(markersByName))]);
+      map.on("zoomend", function () {
+        // Simple label refresh — just keep permanent tooltips
+      });
+    }
+
+    // ================================================================
+    // FILTER LOGIC
+    // Single keyword + single doc ID.
+    // A village is highlighted if it matches BOTH filters (intersection).
+    // If only one filter is active, village must match that one.
+    // Villages matching neither are dimmed (muted color + low opacity).
+    // ================================================================
+
+    function getMarkerFillColor(village) {
+      var matchesKeyword =
+        !activeKeyword || village.keywords.indexOf(activeKeyword) !== -1;
+      var matchesDoc =
+        !activeDocId || village.docIds.indexOf(activeDocId) !== -1;
+
+      if (!activeKeyword && !activeDocId) {
+        return getCssVar("--village-default-color");
+      }
+      if (matchesKeyword && matchesDoc) {
+        return getCssVar("--village-highlight-color");
+      }
+      if (matchesKeyword || matchesDoc) {
+        return getCssVar("--village-default-color");
+      }
+      return getCssVar("--village-muted-color");
+    }
+
+    function applyFilters() {
+      var defaultColor = getCssVar("--village-default-color");
+      var highlightColor = getCssVar("--village-highlight-color");
+      var mutedColor = getCssVar("--village-muted-color");
+
+      for (var i = 0; i < villages.length; i++) {
+        var v = villages[i];
+        var mk = markersByName[v.name];
+        if (!mk) continue;
+
+        var matchesKeyword =
+          !activeKeyword || v.keywords.indexOf(activeKeyword) !== -1;
+        var matchesDoc =
+          !activeDocId || v.docIds.indexOf(activeDocId) !== -1;
+
+        var isMatch = matchesKeyword && matchesDoc;
+        var anyFilter = activeKeyword || activeDocId;
+
+        if (!anyFilter) {
+          // No filter — default
+          mk.setStyle({
+            fillColor: defaultColor,
+            fillOpacity: 0.95,
+            opacity: 1,
+            radius: 8,
+          });
+        } else if (isMatch) {
+          // Highlighted
+          mk.setStyle({
+            fillColor: highlightColor,
+            fillOpacity: 1,
+            opacity: 1,
+            radius: 10,
+          });
+        } else if (matchesKeyword || matchesDoc) {
+          // Partial match — keep default but slightly dimmed
+          mk.setStyle({
+            fillColor: defaultColor,
+            fillOpacity: 0.7,
+            opacity: 0.8,
+            radius: 8,
+          });
+        } else {
+          // Muted
+          mk.setStyle({
+            fillColor: mutedColor,
+            fillOpacity: 0.25,
+            opacity: 0.25,
+            radius: 8,
+          });
+        }
+      }
+
+      // Update doc card highlight
+      highlightSelectedDocCard();
+    }
+
+    // ================================================================
+    // VOSVIEWER DUAL VIEW — load network in right-panel iframe
+    // ================================================================
+
+    /** References to the right-panel elements */
+    var vosFrame = document.getElementById("vos-frame");
+    var networkTitle = document.getElementById("network-title");
+    var networkHint = document.getElementById("network-hint");
+
+    /**
+     * Load a VOSviewer network URL into the right-panel iframe.
+     * - Validates the URL origin (only https://app.vosviewer.com allowed)
+     * - Adds simple_ui=true for a cleaner embedded interface
+     * - Updates the panel title and hint text
+     *
+     * >>> USER: If your VOSviewer URLs use a different host, adjust the
+     *     origin check below <<<
+     */
+    function loadVosNetwork(rawUrl, villageName) {
+      var url;
+      try {
+        url = new URL(String(rawUrl));
+      } catch (e) {
+        console.error("Invalid VOSviewer URL:", rawUrl);
+        return;
+      }
+      if (url.origin !== "https://app.vosviewer.com") {
+        console.warn("URL is not from app.vosviewer.com, skipping:", rawUrl);
+        return;
+      }
+      url.searchParams.set("simple_ui", "true");
+      networkTitle.textContent = villageName || "Village Network";
+      networkHint.textContent =
+        "Showing VOSviewer network for " + (villageName || "selected village") + ".";
+      vosFrame.src = url.toString();
+    }
+
+    /**
+     * Intercept clicks on VOS_URL links inside Leaflet popups.
+     * Instead of opening a new browser tab, load the network in the
+     * right-panel iframe.
+     */
+    document.getElementById("map").addEventListener("click", function (event) {
+      var a = event.target.closest ? event.target.closest("a") : null;
+      if (a) {
+        var href = a.getAttribute("href") || "";
+        if (href.indexOf("https://app.vosviewer.com") === 0) {
+          event.preventDefault();
+          loadVosNetwork(href, networkTitle.textContent);
+        }
+      }
+    });
+
+    // ================================================================
+    // SPLITTER — draggable resize + click to collapse/expand
+    // ================================================================
+    var dualView = document.getElementById("dualView");
+    var splitter = document.getElementById("splitter");
+    var isCollapsed = false;
+    var savedPanelWidth = null;  // remembers width before collapse
+
+    // --- Click to toggle collapse/expand ---
+    splitter.addEventListener("click", function () {
+      // If a drag happened recently, do not treat as a click
+      if (splitter.classList.contains("dragging")) return;
+
+      isCollapsed = !isCollapsed;
+      dualView.classList.toggle("collapsed", isCollapsed);
+      splitter.classList.toggle("collapsed", isCollapsed);
+
+      if (isCollapsed) {
+        // Collapsing: remember current panel width and close any popup
+        var containerWidth = dualView.clientWidth;
+        var mapWidth = document.getElementById("map").getBoundingClientRect().width;
+        savedPanelWidth = Math.max(200, containerWidth - mapWidth - 8);
+        map.closePopup();
+      } else {
+        // Expanding: restore saved width (or default to 50%)
+        var containerWidth = dualView.clientWidth;
+        var newMapWidth = savedPanelWidth
+          ? Math.max(200, containerWidth - savedPanelWidth - 8)
+          : Math.round(containerWidth * 0.5);
+        setMapWidth(newMapWidth);
+      }
+
+      setTimeout(function () { map.invalidateSize(); }, 50);
+    });
+
+    function setMapWidth(px) {
+      var containerWidth = dualView.clientWidth;
+      var mapEl = document.getElementById("map");
+      var panelEl = document.getElementById("network-panel");
+      var splitterWidth = 8;
+      var maxMapWidth = containerWidth - splitterWidth - 200; // leave at least 200px for panel
+      px = Math.max(200, Math.min(px, maxMapWidth));
+      mapEl.style.flex = "0 0 " + px + "px";
+      panelEl.style.flex = "0 0 " + (containerWidth - px - splitterWidth) + "px";
+    }
+
+    // --- Drag to resize ---
+    var isDragging = false;
+    var dragStartX = 0;
+    var dragStartMapWidth = 0;
+
+    splitter.addEventListener("mousedown", function (e) {
+      if (isCollapsed) return; // can't drag when collapsed
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartMapWidth = document.getElementById("map").getBoundingClientRect().width;
+      splitter.classList.add("dragging");
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", function (e) {
+      if (!isDragging) return;
+      var delta = e.clientX - dragStartX;
+      setMapWidth(dragStartMapWidth + delta);
+      map.invalidateSize();
+    });
+
+    document.addEventListener("mouseup", function () {
+      if (!isDragging) return;
+      isDragging = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      // Keep the "dragging" class a little longer so the click handler
+      // won't fire on mouseup after a drag.
+      setTimeout(function () { splitter.classList.remove("dragging"); }, 80);
+      map.invalidateSize();
+    });
+
+    function showTooltip(x, y, html) {
+      mapTooltip.innerHTML = html;
+      mapTooltip.style.left = x + 15 + "px";
+      mapTooltip.style.top = y - 10 + "px";
+      mapTooltip.style.display = "block";
+    }
+
+    function hideTooltip() {
+      mapTooltip.style.display = "none";
+    }
+
+    // Follow cursor while tooltip is visible
+    document.addEventListener("mousemove", function (e) {
+      if (mapTooltip.style.display === "block") {
+        mapTooltip.style.left = e.clientX + 15 + "px";
+        mapTooltip.style.top = e.clientY - 10 + "px";
+      }
+    });
+
+    // ================================================================
+    // INIT
+    // ================================================================
+    buildKeywordTags();
+    buildDocFilter();
+    buildDocCards();
+    resetDetailPanel();
+    initMap();
+
+    // ── Leaflet size recalculation for dual-view layout ──────────────
+    // The map container is now 50% width; Leaflet must recalculate its
+    // internal size or tiles render incorrectly. Re-run on window resize.
+    setTimeout(function () { map.invalidateSize(); }, 100);
+    window.addEventListener("resize", function () {
+      // If not collapsed, keep the panel at its saved pixel width and adjust map
+      if (!isCollapsed) {
+        var containerWidth = dualView.clientWidth;
+        var splitterWidth = 8;
+        var currentMapWidth = document.getElementById("map").getBoundingClientRect().width;
+        var currentPanelWidth = containerWidth - currentMapWidth - splitterWidth;
+        if (currentPanelWidth < 200) {
+          setMapWidth(containerWidth - splitterWidth - 200);
+        } else {
+          document.getElementById("network-panel").style.flex =
+            "0 0 " + Math.max(200, currentPanelWidth) + "px";
+        }
+      }
+      map.invalidateSize();
+    });
+  })();
+  </script>
+</body>
+</html>
